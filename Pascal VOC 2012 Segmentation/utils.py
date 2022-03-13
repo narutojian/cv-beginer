@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import os
 import torchvision
+import numpy as np
 
 VOC_COLORMAP = [[0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
                 [0, 0, 128], [128, 0, 128], [0, 128, 128], [128, 128, 128],
@@ -144,3 +145,43 @@ def label2image(pred,device):
 def init_weights(m):
     if isinstance(m, nn.Conv2d):
         torch.nn.init.kaiming_normal_(m.weight)
+
+# one hot encoding 
+# 给定一个inputs 输出one hot 形式的outputs 新增的维度在最后一个
+def one_hot(x,classes):
+    a = torch.eye(classes)
+    return a[x]
+
+# iou score for semantic segmentation
+def mean_iou(predict, y_true,classes,ignore_backgroud=True,smooth = 1e-6):
+    ''' 
+        predict shape: N*H*W ; each pixel represent a class 
+        y_true: N*H*W; each pixel represent a class 
+    '''
+    pred_one_hot = one_hot(predict,classes)
+    y_true_one_hot = one_hot(y_true,classes)
+    axes = [1,2]
+    
+    intersection = torch.sum(torch.logical_and(pred_one_hot,y_true_one_hot),axes)
+    union = torch.sum(torch.logical_or(pred_one_hot,y_true_one_hot),axes)
+    if ignore_backgroud:
+        intersection = intersection[:,1:]
+        union = union[:,1:]
+    iou = (intersection+smooth)/(union+smooth)
+    return torch.mean(iou,dim=1)
+    # return torch.mean(iou)
+
+def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-4):
+    ''' 
+        predict shape: N*H*W ; each pixel represent a class 
+        y_true: N*H*W; each pixel represent a class 
+    '''
+    iou = np.zeros(classes)
+    idx = 0
+    if ignore_background:
+        idx = 1
+    for i in range(idx,classes):
+        intersect = torch.sum(torch.logical_and(predict==i,y_true==i))
+        union = torch.sum(torch.logical_or(predict==i,y_true==i))
+        iou[i] = (intersect+smooth)/(union+smooth)
+    return iou
