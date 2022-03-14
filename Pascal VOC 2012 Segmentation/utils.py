@@ -152,26 +152,8 @@ def one_hot(x,classes):
     a = torch.eye(classes)
     return a[x]
 
-# iou score for semantic segmentation
-def mean_iou(predict, y_true,classes,ignore_backgroud=True,smooth = 1e-6):
-    ''' 
-        predict shape: N*H*W ; each pixel represent a class 
-        y_true: N*H*W; each pixel represent a class 
-    '''
-    pred_one_hot = one_hot(predict,classes)
-    y_true_one_hot = one_hot(y_true,classes)
-    axes = [1,2]
-    
-    intersection = torch.sum(torch.logical_and(pred_one_hot,y_true_one_hot),axes)
-    union = torch.sum(torch.logical_or(pred_one_hot,y_true_one_hot),axes)
-    if ignore_backgroud:
-        intersection = intersection[:,1:]
-        union = union[:,1:]
-    iou = (intersection+smooth)/(union+smooth)
-    return torch.mean(iou,dim=1)
-    # return torch.mean(iou)
 
-def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-4):
+def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-6):
     ''' 
         predict shape: N*H*W ; each pixel represent a class 
         y_true: N*H*W; each pixel represent a class 
@@ -185,3 +167,51 @@ def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-4):
         union = torch.sum(torch.logical_or(predict==i,y_true==i))
         iou[i] = (intersect+smooth)/(union+smooth)
     return iou
+
+def iou_confusion(predict,y_true,classes,ignore_background=True):
+    confuse_matrix = confusion_matrix(predict,y_true,classes)
+    precision, recall = precision_recall(confuse_matrix)
+    iou = 1/(1/precision+1/recall -1)
+    if ignore_background:
+        return iou[1:]
+    return iou
+
+def confusion_matrix(pred,y_true,classes):
+    '''
+        pred : N*H*W 
+        y_true: N*H*W
+        classes : class amount
+        return:
+            res is a confusion matrix formed as 
+                                    Prediction
+                                    class0    class1 ...
+            ground_truth   class0
+                           class1
+                            ...
+    '''
+    res = np.zeros((classes,classes))
+    
+    for i in range(classes):
+        classes_truth = y_true == i
+
+        for j in range(classes):
+            res[i][j] = torch.sum(torch.logical_and(classes_truth,pred == j)).item()
+    return res
+
+def precision_recall(confuse_matrix,smooth=1e-6):
+    '''
+        prediction: tp/(tp+fp) tp is true postive; fp is false postion;
+        recall : tp/(tp+fn) fn is false negative;
+    '''
+    classes = confuse_matrix.shape[0]
+    precision = np.zeros(classes)
+    recall = np.zeros(classes)
+    
+    matrix_row_sum = np.sum(confuse_matrix,axis=0)
+    matrix_col_sum = np.sum(confuse_matrix,axis=1)
+    
+    for i in range(classes):
+        precision[i] = (confuse_matrix[i][i]+smooth)/(matrix_row_sum[i]+smooth)
+        recall[i] = (confuse_matrix[i][i]+smooth)/(matrix_col_sum[i]+smooth)
+    return precision,recall
+
