@@ -117,18 +117,21 @@ def test(dataloader, device,model, loss_fn):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     model.eval()
-    test_loss, correct = 0, 0
+    test_loss = 0
+    pixel_acc = 0
+    mean_acc = 0
     with torch.no_grad():
         for X, y in dataloader:
             X,y = X.to(device), y.to(device)
             pred = model(X)
             test_loss += loss_fn(pred, y).sum().item()
-            pred = nn.Softmax(dim=1)(pred)
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+            pred = torch.argmax(pred,1)
+            pixel_acc += pixel_accuracy(pred,y)
+            mean_acc += mean_accuracy(pred,y)
     test_loss /= num_batches
-    # print(y.shape)
-    correct /= size*y.shape[1]*y.shape[2]
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.2f}%, Avg loss: {test_loss:>8f} \n")
+    pixel_acc /= num_batches
+    mean_acc /= num_batches
+    print(f"Test Error: \n pixel acc: {(100*pixel_acc):>0.2f}%, mean acc: {(100*mean_acc):>0.2f}%, Avg loss: {test_loss:>8f} \n")
     
 # predict one image
 def predict(img,dataloader,device,model):
@@ -158,6 +161,7 @@ def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-6):
         predict shape: N*H*W ; each pixel represent a class 
         y_true: N*H*W; each pixel represent a class 
     '''
+    
     iou = np.zeros(classes)
     idx = 0
     if ignore_background:
@@ -166,7 +170,7 @@ def iou(predict, y_true,classes,ignore_background=True,smooth = 1e-6):
         intersect = torch.sum(torch.logical_and(predict==i,y_true==i))
         union = torch.sum(torch.logical_or(predict==i,y_true==i))
         iou[i] = (intersect+smooth)/(union+smooth)
-    return iou
+    return iou[idx:]
 
 def iou_confusion(predict,y_true,classes,ignore_background=True):
     confuse_matrix = confusion_matrix(predict,y_true,classes)
@@ -214,4 +218,25 @@ def precision_recall(confuse_matrix,smooth=1e-6):
         precision[i] = (confuse_matrix[i][i]+smooth)/(matrix_row_sum[i]+smooth)
         recall[i] = (confuse_matrix[i][i]+smooth)/(matrix_col_sum[i]+smooth)
     return precision,recall
+
+# pixel accuracy for semantic segmentation
+def pixel_accuracy(predict,y_true):
+    ''' 
+        predict : N*H*W
+        y_true: N*H*W
+    '''
+    assert predict.shape == y_true.shape
+    total = 1
+    for i in predict.shape:
+        total *= i
+    correct = (predict == y_true).type(torch.float).sum().item()
+    return correct/total
+
+# accuracy for all kinds of classes ,and mean this accuracy
+def mean_accuracy(predict,y_true,classes=21,smooth=1e-8):
+    acc = np.zeros(classes)
+    
+    for i in range(classes):
+        acc[i] = ((smooth+torch.sum(torch.logical_and(predict == i, y_true == i)))/(smooth+torch.sum(y_true == i))).item() 
+    return np.mean(acc)
 
